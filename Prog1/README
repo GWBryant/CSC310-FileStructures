@@ -1,0 +1,34 @@
+1) Goal:
+    The objective of this project is to process data from binary files that contains a library database and a list of transactions that change that 
+    database. In this program we copy the old master file and make edits to it based on the transaction file we are given and then output the
+    modified data to a new master file. 
+
+2) Input/output specification:
+    Input files:
+        Master library file: Master file of BookRec objects that denotes the current books in the library.
+        Transaction file: File of transactionRecs that denotes what changes/transactions are going to be made to the master file.
+    Output files:
+        ERRORS: outputs any errors that occur while trying to update the library database.
+        New Master libary file: outputs new master file of bookrec objects that have been changed by the transaction file.
+
+3) Algorithm outline:
+    - First we open the files we need to input from and output to. We start with the transaction file and ERRORS file.
+    - Next we need to make a copy of the master file, we'll copy it to "copy.out" using the system() function call
+    - Then we will use that copied file to create a map between bookrecord isbn's and byte offsets where those records exist in the copy.out file.
+    - Then we call the updateFile() method which reads through the transactoin file and performs those transactions as such:
+        - addBook(): when the transaction type is add we go to this function, which opens the "copy.out" file and checks to see if this book already
+        exists in the database and if it doesnt it add it to the end of the "copy.out" file and add it to the offset map. If it does exist print to
+        the errors file.
+        - deleteBook(): when the transaction type is delete we go to this function, which checks if the isbn is in the map, and if it is it removes
+        it from the map and if it isnt in the map it prints to the errors file.
+        - changeOnHand(): if the transaction type is changeOnhand then we go to this function. Here we first open the "copy.out" file and declare a
+        BookRec object. We then check and see if the book we are looking to change is in the "copy.out" file , if it is we pull that record out of
+        the file using the byte offset we have stored in the map, then we add the bookRecs onhand value to the bookrec stored in the transactionRec.
+        We then check to see if the new onhand is negative and if it is we print an error and make it zero. Then we write delete the old record from
+        the map and write the new record stored in the transaction record to the file and add it to the map. If the record doesnt exist in the master
+        file write error to the ERROR file.
+        - changePrice(): if the transaction type is changePrice we go to this function. For this function we erase the old record from the map and
+        write the new record to file and add it to the map. If the record doesn't already exist we print an error to the ERRORS file instead.
+    - After we have proccesses all of the transactions we print the new bookrecords to a new master file. To do this I loop through the map and
+    print the bookRec objects in sequence to the new master file.
+    -Then we print out the new master file to the standard output.

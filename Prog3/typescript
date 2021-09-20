@@ -1,0 +1,2222 @@
+Script started on Fri 07 May 2021 04:26:34 PM EDT
+]0;bryant_gw@cobra:~/csc310/Prog3[?1034h[bryant_gw@cobra Prog3]$ cat btree.h
+
+#include <vector>
+#include <set>
+#include <iostream>
+#include <cstring>
+#include <string>
+#include <algorithm>
+#include <cstdlib>
+#include "album.h"
+using namespace std;
+
+#ifndef BTREE_H
+#define BTREE_H
+
+class Album;
+const int ORDER = 5;
+typedef Album keyType;
+typedef int IndexArray[ORDER];
+typedef keyType ValueArray[ORDER-1];
+
+struct BTNode
+{
+        int currSize;
+        ValueArray contents;
+        IndexArray child = {-1,-1,-1,-1,-1};
+}; 
+
+struct Pair
+{
+        Album element;
+        int loffset;
+        int roffset;
+        friend bool operator < (const Pair& p1, const Pair& p2)
+           { return (p1.element < p2.element);  }
+};
+
+class BTree
+{
+ public:
+	BTree();
+	void writeHeader (char * fileName);
+	void insert (keyType key);
+	void reset (char * filename);
+	void close ();
+	void printTree();
+	void inorder();
+	void reverse();
+	int getHeight();
+	bool search (string key);
+	keyType retrieve (string key);
+	void totalio() const;
+	int countLeaves();
+
+ private:
+	BTNode root;
+        int rootAddr;
+	char treeFileName[80];
+	fstream treeFile;
+	int height;
+	void printTree (int rootAddr);
+	void inorder (int rootAddr);
+	void reverse (int rootAddr);
+	int read;
+	int write;
+
+	int findAddr (keyType key, BTNode t, int tAddr);
+	int findpAddr(keyType key, BTNode t, int tAddr, int findAddr);
+	void insert (keyType key, int recAddr, int oneAddr, int twoAddr);
+        BTNode getNode (int recAddr);
+	void printNode(int recAddr);
+        void placeNode (keyType k,int recAddr,int oneAddr,int twoAddr);
+	bool isLeaf (int recAddr);
+	bool isLeaf(BTNode t);
+	int countLeaves(int recAddr);
+        void adjRoot (keyType rootElem, int oneAddr, int twoAddr);
+        void splitNode (keyType& key,int recAddr,int& oneAddr,int& twoAddr);
+	bool search (string key, BTNode t, int tAddr);
+	keyType retrieve (string key, BTNode t, int tAddr);
+	
+};
+
+#endif
+]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ cat btree.h[Kcpp
+#include "btree.h"
+
+/***constructor***/
+BTree::BTree()
+{
+    read = 0;
+    write = 0;
+    height = 0;
+    root.currSize = 0;
+    for(int i = 0; i < ORDER; i++)
+    {
+        root.child[i] = -1;
+    }
+}
+/******************/
+
+//resets the header for when you are creating a new BTree
+void BTree::reset(char * fileName)
+{
+    treeFile.open(fileName,ios::trunc|ios::in|ios::out|ios::binary);
+    BTNode node;
+    node.child[0] = sizeof(node);
+    treeFile.write((char *) &node, sizeof(BTNode));
+    write++;
+    treeFile.write((char *) &root, sizeof(BTNode));
+    write++;
+    treeFile.close();
+}
+
+//grabs values from the header
+void BTree::writeHeader(char * fileName)
+{
+    treeFile.open(fileName,ios::in|ios::out|ios::binary);
+    strcpy(treeFileName,fileName);
+    BTNode node;
+    treeFile.seekg(0,ios::beg);
+    treeFile.read((char *) &node, sizeof(BTNode));
+    read++;
+    rootAddr = node.child[0];
+    treeFile.seekg(rootAddr);
+    treeFile.read((char *) &root, sizeof(BTNode));
+    read++;
+}
+
+/***inserting keys into the tree***/
+void BTree::insert(keyType key)
+{
+    insert(key,rootAddr,-1,-1);
+}
+
+//insert into the tree
+void BTree::insert(keyType key, int recAddr, int oneAddr, int twoAddr)
+{
+    BTNode t = getNode(recAddr);
+    if(!isLeaf(t))
+    {
+        for(int i = 0; i < t.currSize; i++)
+        {
+            if(key < t.contents[i])
+            {
+                insert(key,t.child[i], oneAddr, twoAddr);
+                return;
+            }
+        }
+        insert(key,t.child[t.currSize], oneAddr, twoAddr);
+        return;
+    }
+    else
+    {
+        if(t.currSize != ORDER-1)
+        {
+            t.contents[t.currSize] = key;
+            t.currSize++;
+            /***sort***/
+            keyType temp;
+            for(int i = t.currSize-1; i > 0; i--)
+            {
+                if(t.contents[i] < t.contents[i-1])
+                {
+                    temp = t.contents[i-1];
+                    t.contents[i-1] = t.contents[i];
+                    t.contents[i] = temp;
+                }
+            }
+            /**********/
+            treeFile.seekg(recAddr,ios::beg);
+            treeFile.write((char *) &t, sizeof(BTNode));
+            write++;
+        }
+        else
+        {
+            cout << "Now Splitting!" << endl;
+            splitNode(key,recAddr,oneAddr,twoAddr);
+        }
+    }
+}
+
+//split a node up
+void BTree::splitNode(keyType& key,int recAddr,int& oneAddr,int& twoAddr)
+{
+    //edit current BTNode
+    BTNode t = getNode(recAddr);
+    keyType temp;
+    int swapAddr;
+
+    if(key < t.contents[t.currSize-1])
+    {
+        temp = t.contents[t.currSize-1];
+        t.contents[t.currSize-1] = key;
+        key = temp;
+
+        swapAddr = t.child[t.currSize];
+        t.child[t.currSize] = twoAddr;
+        twoAddr = swapAddr;
+        for(int i = t.currSize-1; i > 0; i--)
+        {
+            if(t.contents[i] < t.contents[i-1])
+            {
+                temp = t.contents[i-1];
+                t.contents[i-1] = t.contents[i];
+                t.contents[i] = temp;
+
+                swapAddr = t.child[i];
+                t.child[i] = t.child[i+1];
+                t.child[i+1] = swapAddr;
+            }
+            else
+                break;
+        }
+    }
+
+    keyType  rootVal = t.contents[ORDER/2];
+    t.currSize = 2;
+    treeFile.seekg(recAddr,ios::beg);
+    treeFile.write((char *) &t, sizeof(BTNode));
+    write++;
+
+    //create new node for split
+    BTNode splitNode;
+    splitNode.contents[0] = t.contents[3];
+    splitNode.contents[1] = key;
+    splitNode.currSize = 2;
+    splitNode.child[0] = t.child[3];
+    splitNode.child[1] = t.child[4];
+    splitNode.child[2] = twoAddr;
+    treeFile.seekg(0,ios::end);
+    int rightAddr = treeFile.tellg();
+    treeFile.write((char *) &splitNode, sizeof(BTNode));
+    write++;
+
+    if(recAddr == rootAddr)
+    {
+        //adjust the root
+        cout << "Adjusting Root!" << endl;
+        adjRoot(rootVal,recAddr,rightAddr);
+
+        //indicate height change
+        height++;
+    }
+    else
+    {
+        //place temp key in root
+        placeNode(rootVal,findpAddr(key,root,rootAddr,recAddr),recAddr,rightAddr);
+    }
+}
+
+//place a key in its parent when promoting
+void BTree::placeNode(keyType k,int recAddr,int oneAddr,int twoAddr)
+{
+    BTNode parent = getNode(recAddr);
+    if(parent.currSize != ORDER-1)
+    {
+        int i;
+        for(i = parent.currSize-1; i >= 0; i--)
+        {
+            if(k < parent.contents[i])
+            {
+                parent.contents[i+1] = parent.contents[i];
+                parent.child[i+2] = parent.child[i+1];
+            }
+            else
+                break;
+        }
+        parent.contents[i+1] = k;
+        parent.child[i+2] = twoAddr;
+        parent.currSize++;
+        treeFile.seekg(recAddr,ios::beg);
+        treeFile.write((char *) &parent, sizeof(BTNode));
+        write++;
+
+        if(recAddr == rootAddr)
+            root = parent;
+    }
+    else 
+    {
+        cout << "Now Splitting!" << endl;
+        splitNode(k,recAddr,oneAddr,twoAddr);
+    }
+}
+
+//adjust the root node when the root splits
+void BTree::adjRoot(keyType rootElem, int oneAddr, int twoAddr)
+{
+    BTNode newRoot;
+    newRoot.currSize = 1;
+    newRoot.contents[0] = rootElem;
+    newRoot.child[0] = oneAddr;
+    newRoot.child[1] = twoAddr;
+    treeFile.seekg(0,ios::end);
+    rootAddr = treeFile.tellg();
+    treeFile.write((char *) &newRoot, sizeof(BTNode));
+    write++;
+    root = newRoot;
+
+    BTNode dummy = getNode(0);
+    dummy.child[0] = rootAddr;
+    treeFile.seekg(0,ios::beg);
+    treeFile.write((char *) &dummy, sizeof(BTNode));
+    write++;
+}
+/**************************************/
+
+/***get a node given a rec Adress***/
+BTNode BTree::getNode(int recAddr)
+{
+    BTNode temp;
+    treeFile.seekg(recAddr,ios::beg);
+    treeFile.read((char *) &temp,sizeof(BTNode));
+    read++;
+    return temp;
+}
+/***********************************/
+
+/***leaf code***/
+bool BTree::isLeaf(int recAddr)
+{
+    BTNode t = getNode(recAddr);
+    return isLeaf(t);
+}
+
+//tell if a node is a leaf
+bool BTree::isLeaf(BTNode t)
+{
+    for(int i = 0; i < t.currSize; i++)
+    {
+        if(t.child[i] != -1)
+            return false;
+    }
+    return true;
+}
+
+int BTree::countLeaves()
+{
+    return countLeaves(rootAddr);
+}
+
+//count leaves in tree
+int BTree::countLeaves(int recAddr)
+{
+    if(recAddr != -1)
+    {
+        BTNode node = getNode(recAddr);
+        if(isLeaf(node))
+            return 1;
+        else
+        {
+            for(int j = 0; j <= node.currSize; j++)
+            {
+                if(node.child[j] != -1)
+                    countLeaves(node.child[j]);
+            }
+        }
+    }
+    return 0;
+}
+/***************/
+
+/***search functions***/
+bool BTree::search(string key) //public
+{
+    return search(key,root,rootAddr);
+}
+
+//search for a key and see if its in the tree
+bool BTree::search(string key, BTNode t, int tAddr) //private
+{
+    for(int i = 0; i < t.currSize; i++)
+    {
+        // cout << key << " = " << t.contents[i].getUPC() << " is " << boolalpha << (strcmp(key.c_str(), t.contents[i].getUPC().c_str()) == 0) << endl;
+        if(strcmp(key.c_str(), t.contents[i].getUPC().c_str()) == 0)
+        {
+            // cout << "returning" << endl;
+            return true;
+        }
+    }
+    if(!isLeaf(tAddr))
+    {
+        for(int i = 0; i < t.currSize; i++)
+        {
+            if(key < t.contents[i].getUPC())
+                return search(key,getNode(t.child[i]),t.child[i]);
+        }
+        return search(key,getNode(t.child[t.currSize]),t.child[t.currSize]);
+    }
+    return false;
+}
+
+//find the parent address of a given node
+int BTree::findpAddr(keyType key, BTNode t, int tAddr, int findAddr)
+{
+    if(tAddr != -1)
+    {
+        for(int i = 0; i <= t.currSize; i++)
+        {
+            if(t.child[i] == findAddr)
+                return tAddr;
+        }
+        for(int i = 0; i < t.currSize; i++)
+        {
+            if(key < t.contents[i])
+            {
+                if(t.child[i] != -1)
+                    return findpAddr(key,getNode(t.child[i]),t.child[i],findAddr);
+                else
+                    return -1;
+            }
+        }
+        if(t.child[t.currSize] != -1)
+            return findpAddr(key,getNode(t.child[t.currSize]),t.child[t.currSize],findAddr);
+        else
+            return -1;
+    }
+    return -1;
+}
+
+//public retrieve call
+keyType BTree::retrieve (string key)
+{
+    return retrieve(key,root,rootAddr);
+}
+
+//retrieve a value you by entering a key
+keyType BTree::retrieve(string key,BTNode t,int tAddr)
+{
+    for(int i = 0; i < t.currSize; i++)
+    {
+        if(strcmp(key.c_str(), t.contents[i].getUPC().c_str()) == 0)
+        {
+            return t.contents[i];
+        }
+    }
+    if(!isLeaf(tAddr))
+    {
+        for(int i = 0; i < t.currSize; i++)
+        {
+            if(key < t.contents[i].getUPC())
+                return retrieve(key,getNode(t.child[i]),t.child[i]);
+        }
+        return retrieve(key,getNode(t.child[t.currSize]),t.child[t.currSize]);
+    }
+    keyType k;
+    return k;
+}
+/*********************/
+
+/***print functions***/
+//public
+void BTree::printTree()
+{
+    cout << "-------- B-tree of height " << height << " --------" << endl;
+    printTree(rootAddr);
+}
+
+void BTree::inorder()
+{
+    cout << "-------- B-tree of height " << height << " --------" << endl;
+    inorder(rootAddr);
+}
+
+void BTree::reverse()
+{
+    cout << "-------- B-tree of height " << height << " --------" << endl;
+    reverse(rootAddr);
+}
+//private
+//print tree node by node in preorder traversal
+void BTree::printTree(int recAddr)
+{
+    if(recAddr != -1 && recAddr != 0)
+    {
+        BTNode t = getNode(recAddr);  
+        printNode(recAddr);
+        for(int i = 0; i <= t.currSize; i++)
+        {
+            printTree(t.child[i]);
+        }
+    }
+}
+
+//print inorder traversal of tree contents
+void BTree::inorder(int recAddr)
+{
+    if(recAddr != -1 && recAddr != 0)
+    {
+        BTNode t = getNode(recAddr);
+        for(int i = 0; i < t.currSize; i++)
+        {
+            if(t.child[i] != -1)
+                inorder(t.child[i]);
+            cout << t.contents[i] << endl;
+        }
+        inorder(t.child[t.currSize]);
+    }
+}
+
+//print tree in reverse order
+void BTree::reverse(int recAddr)
+{
+    if(recAddr != -1 && recAddr != 0)
+    {
+        BTNode t = getNode(recAddr);
+        reverse(t.child[t.currSize]);
+        for(int i = t.currSize-1; i >= 0; i--)
+        {
+            if(t.child[i] != -1)
+                reverse(t.child[i]);
+            cout << t.contents[i] << endl;
+        }
+    }
+}
+
+//print a single node of the tree
+void BTree::printNode(int recAddr)
+{
+    treeFile.seekg(recAddr,ios::beg);
+    BTNode t;
+    treeFile.read((char *) &t, sizeof(BTNode));
+    read++;
+    cout << "    *** node of size " << t.currSize << " ***" << endl;
+    for(int i = 0; i < t.currSize; i++)
+        cout << t.contents[i] << endl;
+}
+/*********************/
+
+//close the file
+void BTree::close()
+{
+    treeFile.close();
+}
+
+//print total reads and writes performed
+void BTree::totalio() const
+{
+    cout << "\tTotal Reads: " << read << endl;
+    cout << "\tTotal Writes: " << write << endl;
+}]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ cat btree.cpp[K[K[K[K[K[K[K[K[KcreateBT.cpp
+#include "btree.h"
+#include "album.h"
+#include <iostream>
+#include <fstream>
+
+using namespace std;
+
+int main(int argc, char **argv)
+{
+    /***error handling***/
+    if(argc < 3 || argc > 3)
+    {
+        cerr << "invalid command line arguments" << endl << "try createBT --help for help" << endl;
+        return 1;
+    }
+    ifstream i(argv[2]);
+    if(!i)
+    {
+        cerr << "createBST: file " << argv[2] << " does not exist" << endl;
+        return 1;
+    }
+    i.close();
+    /*******************/
+
+    fstream inFile(argv[1],ios::in);
+    BTree myTree;
+    myTree.reset(argv[2]);
+    myTree.writeHeader(argv[2]);
+    Album t;
+    while(inFile >> t)
+    {
+        if(inFile)
+        {
+            cout << "Now inserting " << t << endl;    
+            myTree.insert(t);
+        }
+    }
+    myTree.printTree();
+    myTree.close();
+    return 0;
+}]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ cat createBT.cpp[K[K[K[K[K[K[K[K[K[K[K[KupdateBT.cpp
+#include "btree.h"
+#include "album.h"
+#include <iostream>
+#include <fstream>
+
+using namespace std;
+
+int main(int argc, char **argv)
+{
+    /***error handling***/
+    if(argc < 3 || argc > 3)
+    {
+        cerr << "invalid command line arguments" << endl << "try createBT --help for help" << endl;
+        return 1;
+    }
+    ifstream i(argv[1]);
+    if(!i)
+    {
+        cerr << "updateBST: file " << argv[1] << " does not exist" << endl;
+        return 1;
+    }
+    i.close();
+    /********************/
+    fstream inFile(argv[2],ios::in);
+
+    BTree myTree;
+    myTree.writeHeader(argv[1]);
+    Album t;
+    char option;
+    string dummy;
+    string key;
+    while(inFile >> option)
+    {
+        if(option == 'I')
+        {
+            getline(inFile,dummy);
+            if(inFile)
+            {
+                inFile >> t;
+                cout << "Now inserting " << t << endl;    
+                myTree.insert(t);
+            }
+        }
+        else if(option == 'S')
+        {
+            getline(inFile,dummy);
+            if(inFile)
+            {
+                inFile >> key;
+                if(myTree.search(key))
+                {
+                    keyType a = myTree.retrieve(key);
+                    cout << "\t" << a << endl;
+                }
+                else
+                {
+                    cout << "\t\"" << key << "\" not found" << endl;
+                }
+            }
+        }
+    }
+    cout << endl;
+    myTree.totalio();
+    myTree.close();
+    return 0;
+}]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ make
+c++ -c btree.cpp
+c++ -o myCreate createBT.cpp btree.o album.o
+c++ -o myUpdate updateBT.cpp btree.o album.o
+]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ myCreate album.baby tree.ind
+Now inserting 08722|Counting Crows|This Desert Life
+Now inserting 75599|U2|All That You Can't Leave Behind
+Now inserting 42276|Tom Petty|Into the Great Wide Open
+Now inserting 02284|Kenny Loggins|Footloose
+-------- B-tree of height 0 --------
+    *** node of size 4 ***
+02284|Kenny Loggins|Footloose
+08722|Counting Crows|This Desert Life
+42276|Tom Petty|Into the Great Wide Open
+75599|U2|All That You Can't Leave Behind
+]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ myCreate album.baby tree.ind[1P tree.ind[1P tree.ind[1P tree.ind[1P tree.indm tree.inde tree.indd tree.ind
+Now inserting 08722|Counting Crows|This Desert Life
+Now inserting 75599|U2|All That You Can't Leave Behind
+Now inserting 42276|Tom Petty|Into the Great Wide Open
+Now inserting 02284|Kenny Loggins|Footloose
+Now inserting 20831|Dave Matthews|Everyday
+Now Splitting!
+Adjusting Root!
+Now inserting 99000|Train|Drops of Jupiter
+Now inserting 00100|Dido|No Angel
+Now inserting 00101|Eva Cassidy|Songbird
+Now inserting 00102|Metallica|Ride the Lightning
+Now Splitting!
+Now inserting 00000|Any Song|Any Artist
+Now inserting 00001|Any Song|Any Artist
+Now inserting 00002|Any Song|Any Artist
+Now Splitting!
+Now inserting 00003|Any Song|Any Artist
+Now inserting 00004|Any Song|Any Artist
+Now inserting 00005|Any Song|Any Artist
+Now Splitting!
+Now inserting 99999|Any Song|Any Artist
+Now inserting 99998|Any Song|Any Artist
+Now Splitting!
+Now Splitting!
+Adjusting Root!
+Now inserting 00006|Any Song|Any Artist
+Now inserting 00007|Any Song|Any Artist
+Now inserting 00008|Any Song|Any Artist
+Now Splitting!
+Now inserting 00009|Any Song|Any Artist
+Now inserting 00010|Any Song|Any Artist
+Now inserting 00011|Any Song|Any Artist
+Now Splitting!
+Now inserting 00012|Any Song|Any Artist
+Now inserting 00013|Any Song|Any Artist
+Now inserting 00014|Any Song|Any Artist
+Now Splitting!
+Now Splitting!
+-------- B-tree of height 2 --------
+    *** node of size 2 ***
+00008|Any Song|Any Artist
+00102|Metallica|Ride the Lightning
+    *** node of size 2 ***
+00002|Any Song|Any Artist
+00005|Any Song|Any Artist
+    *** node of size 2 ***
+00000|Any Song|Any Artist
+00001|Any Song|Any Artist
+    *** node of size 2 ***
+00003|Any Song|Any Artist
+00004|Any Song|Any Artist
+    *** node of size 2 ***
+00006|Any Song|Any Artist
+00007|Any Song|Any Artist
+    *** node of size 2 ***
+00011|Any Song|Any Artist
+00014|Any Song|Any Artist
+    *** node of size 2 ***
+00009|Any Song|Any Artist
+00010|Any Song|Any Artist
+    *** node of size 2 ***
+00012|Any Song|Any Artist
+00013|Any Song|Any Artist
+    *** node of size 2 ***
+00100|Dido|No Angel
+00101|Eva Cassidy|Songbird
+    *** node of size 2 ***
+20831|Dave Matthews|Everyday
+99000|Train|Drops of Jupiter
+    *** node of size 2 ***
+02284|Kenny Loggins|Footloose
+08722|Counting Crows|This Desert Life
+    *** node of size 2 ***
+42276|Tom Petty|Into the Great Wide Open
+75599|U2|All That You Can't Leave Behind
+    *** node of size 2 ***
+99998|Any Song|Any Artist
+99999|Any Song|Any Artist
+]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ myCreate album.med tree.ind[C[C[C[C[C[C[C[C[C[C[C[C[C[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[K[KUpdate tree.ind tans[K[K[Krans1.dat
+bash: mUpdate: command not found...
+]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ mUpdate tree.ind trans1.dat[1@y[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C
+	42276|Tom Petty|Into the Great Wide Open
+	00100|Dido|No Angel
+	08722|Counting Crows|This Desert Life
+Now inserting 01015|My New Artist|My New CD
+
+	Total Reads: 29
+	Total Writes: 1
+]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ myUpdate tree.ind trans1.dat[1P[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[CyCreate album.med tree.ind[1P tree.ind[1P tree.ind[1P tree.indl tree.inda tree.indr tree.indg tree.inde tree.ind
+Now inserting 0|Jesse Mercer|GO BEARS!
+Now inserting 1|Jesse Mercer|GO BEARS!
+Now inserting 2|Jesse Mercer|GO BEARS!
+Now inserting 3|Jesse Mercer|GO BEARS!
+Now inserting 4|Jesse Mercer|GO BEARS!
+Now Splitting!
+Adjusting Root!
+Now inserting 5|Jesse Mercer|GO BEARS!
+Now inserting 6|Jesse Mercer|GO BEARS!
+Now inserting 7|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 8|Jesse Mercer|GO BEARS!
+Now inserting 9|Jesse Mercer|GO BEARS!
+Now inserting 10|Jesse Mercer|GO BEARS!
+Now inserting 11|Jesse Mercer|GO BEARS!
+Now inserting 12|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 13|Jesse Mercer|GO BEARS!
+Now inserting 14|Jesse Mercer|GO BEARS!
+Now inserting 15|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 16|Jesse Mercer|GO BEARS!
+Now inserting 17|Jesse Mercer|GO BEARS!
+Now inserting 18|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Adjusting Root!
+Now inserting 19|Jesse Mercer|GO BEARS!
+Now inserting 20|Jesse Mercer|GO BEARS!
+Now inserting 21|Jesse Mercer|GO BEARS!
+Now inserting 22|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 23|Jesse Mercer|GO BEARS!
+Now inserting 24|Jesse Mercer|GO BEARS!
+Now inserting 25|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 26|Jesse Mercer|GO BEARS!
+Now inserting 27|Jesse Mercer|GO BEARS!
+Now inserting 28|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 29|Jesse Mercer|GO BEARS!
+Now inserting 30|Jesse Mercer|GO BEARS!
+Now inserting 31|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 32|Jesse Mercer|GO BEARS!
+Now inserting 33|Jesse Mercer|GO BEARS!
+Now inserting 34|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 35|Jesse Mercer|GO BEARS!
+Now inserting 36|Jesse Mercer|GO BEARS!
+Now inserting 37|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 38|Jesse Mercer|GO BEARS!
+Now inserting 39|Jesse Mercer|GO BEARS!
+Now inserting 40|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 41|Jesse Mercer|GO BEARS!
+Now inserting 42|Jesse Mercer|GO BEARS!
+Now inserting 43|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 44|Jesse Mercer|GO BEARS!
+Now inserting 45|Jesse Mercer|GO BEARS!
+Now inserting 46|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 47|Jesse Mercer|GO BEARS!
+Now inserting 48|Jesse Mercer|GO BEARS!
+Now inserting 49|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 50|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 51|Jesse Mercer|GO BEARS!
+Now inserting 52|Jesse Mercer|GO BEARS!
+Now inserting 53|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Adjusting Root!
+Now inserting 54|Jesse Mercer|GO BEARS!
+Now inserting 55|Jesse Mercer|GO BEARS!
+Now inserting 56|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 57|Jesse Mercer|GO BEARS!
+Now inserting 58|Jesse Mercer|GO BEARS!
+Now inserting 59|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 60|Jesse Mercer|GO BEARS!
+Now inserting 61|Jesse Mercer|GO BEARS!
+Now inserting 62|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 63|Jesse Mercer|GO BEARS!
+Now inserting 64|Jesse Mercer|GO BEARS!
+Now inserting 65|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 66|Jesse Mercer|GO BEARS!
+Now inserting 67|Jesse Mercer|GO BEARS!
+Now inserting 68|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 69|Jesse Mercer|GO BEARS!
+Now inserting 70|Jesse Mercer|GO BEARS!
+Now inserting 71|Jesse Mercer|GO BEARS!
+Now inserting 72|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 73|Jesse Mercer|GO BEARS!
+Now inserting 74|Jesse Mercer|GO BEARS!
+Now inserting 75|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 76|Jesse Mercer|GO BEARS!
+Now inserting 77|Jesse Mercer|GO BEARS!
+Now inserting 78|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 79|Jesse Mercer|GO BEARS!
+Now inserting 80|Jesse Mercer|GO BEARS!
+Now inserting 81|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now inserting 82|Jesse Mercer|GO BEARS!
+Now inserting 83|Jesse Mercer|GO BEARS!
+Now inserting 84|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 85|Jesse Mercer|GO BEARS!
+Now inserting 86|Jesse Mercer|GO BEARS!
+Now inserting 87|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 88|Jesse Mercer|GO BEARS!
+Now inserting 89|Jesse Mercer|GO BEARS!
+Now inserting 90|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 91|Jesse Mercer|GO BEARS!
+Now inserting 92|Jesse Mercer|GO BEARS!
+Now inserting 93|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 94|Jesse Mercer|GO BEARS!
+Now inserting 95|Jesse Mercer|GO BEARS!
+Now inserting 96|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 97|Jesse Mercer|GO BEARS!
+Now inserting 98|Jesse Mercer|GO BEARS!
+Now inserting 99|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 100|Jesse Mercer|GO BEARS!
+Now inserting 101|Jesse Mercer|GO BEARS!
+Now inserting 102|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 103|Jesse Mercer|GO BEARS!
+Now inserting 104|Jesse Mercer|GO BEARS!
+Now inserting 105|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 106|Jesse Mercer|GO BEARS!
+Now inserting 107|Jesse Mercer|GO BEARS!
+Now inserting 108|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 109|Jesse Mercer|GO BEARS!
+Now inserting 110|Jesse Mercer|GO BEARS!
+Now inserting 111|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 112|Jesse Mercer|GO BEARS!
+Now inserting 113|Jesse Mercer|GO BEARS!
+Now inserting 114|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 115|Jesse Mercer|GO BEARS!
+Now inserting 116|Jesse Mercer|GO BEARS!
+Now inserting 117|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 118|Jesse Mercer|GO BEARS!
+Now inserting 119|Jesse Mercer|GO BEARS!
+Now inserting 120|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 121|Jesse Mercer|GO BEARS!
+Now inserting 122|Jesse Mercer|GO BEARS!
+Now inserting 123|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 124|Jesse Mercer|GO BEARS!
+Now inserting 125|Jesse Mercer|GO BEARS!
+Now inserting 126|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now inserting 127|Jesse Mercer|GO BEARS!
+Now inserting 128|Jesse Mercer|GO BEARS!
+Now inserting 129|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 130|Jesse Mercer|GO BEARS!
+Now inserting 131|Jesse Mercer|GO BEARS!
+Now inserting 132|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 133|Jesse Mercer|GO BEARS!
+Now inserting 134|Jesse Mercer|GO BEARS!
+Now inserting 135|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 136|Jesse Mercer|GO BEARS!
+Now inserting 137|Jesse Mercer|GO BEARS!
+Now inserting 138|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 139|Jesse Mercer|GO BEARS!
+Now inserting 140|Jesse Mercer|GO BEARS!
+Now inserting 141|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 142|Jesse Mercer|GO BEARS!
+Now inserting 143|Jesse Mercer|GO BEARS!
+Now inserting 144|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 145|Jesse Mercer|GO BEARS!
+Now inserting 146|Jesse Mercer|GO BEARS!
+Now inserting 147|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 148|Jesse Mercer|GO BEARS!
+Now inserting 149|Jesse Mercer|GO BEARS!
+Now inserting 150|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 151|Jesse Mercer|GO BEARS!
+Now inserting 152|Jesse Mercer|GO BEARS!
+Now inserting 153|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now inserting 154|Jesse Mercer|GO BEARS!
+Now inserting 155|Jesse Mercer|GO BEARS!
+Now inserting 156|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 157|Jesse Mercer|GO BEARS!
+Now inserting 158|Jesse Mercer|GO BEARS!
+Now inserting 159|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 160|Jesse Mercer|GO BEARS!
+Now inserting 161|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 162|Jesse Mercer|GO BEARS!
+Now inserting 163|Jesse Mercer|GO BEARS!
+Now inserting 164|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 165|Jesse Mercer|GO BEARS!
+Now inserting 166|Jesse Mercer|GO BEARS!
+Now inserting 167|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 168|Jesse Mercer|GO BEARS!
+Now inserting 169|Jesse Mercer|GO BEARS!
+Now inserting 170|Jesse Mercer|GO BEARS!
+Now inserting 171|Jesse Mercer|GO BEARS!
+Now inserting 172|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 173|Jesse Mercer|GO BEARS!
+Now inserting 174|Jesse Mercer|GO BEARS!
+Now inserting 175|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 176|Jesse Mercer|GO BEARS!
+Now inserting 177|Jesse Mercer|GO BEARS!
+Now inserting 178|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 179|Jesse Mercer|GO BEARS!
+Now inserting 180|Jesse Mercer|GO BEARS!
+Now inserting 181|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 182|Jesse Mercer|GO BEARS!
+Now inserting 183|Jesse Mercer|GO BEARS!
+Now inserting 184|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 185|Jesse Mercer|GO BEARS!
+Now inserting 186|Jesse Mercer|GO BEARS!
+Now inserting 187|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Adjusting Root!
+Now inserting 188|Jesse Mercer|GO BEARS!
+Now inserting 189|Jesse Mercer|GO BEARS!
+Now inserting 190|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 191|Jesse Mercer|GO BEARS!
+Now inserting 192|Jesse Mercer|GO BEARS!
+Now inserting 193|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 194|Jesse Mercer|GO BEARS!
+Now inserting 195|Jesse Mercer|GO BEARS!
+Now inserting 196|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 197|Jesse Mercer|GO BEARS!
+Now inserting 198|Jesse Mercer|GO BEARS!
+Now inserting 199|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 200|Jesse Mercer|GO BEARS!
+Now inserting 201|Jesse Mercer|GO BEARS!
+Now inserting 202|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 203|Jesse Mercer|GO BEARS!
+Now inserting 204|Jesse Mercer|GO BEARS!
+Now inserting 205|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 206|Jesse Mercer|GO BEARS!
+Now inserting 207|Jesse Mercer|GO BEARS!
+Now inserting 208|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 209|Jesse Mercer|GO BEARS!
+Now inserting 210|Jesse Mercer|GO BEARS!
+Now inserting 211|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 212|Jesse Mercer|GO BEARS!
+Now inserting 213|Jesse Mercer|GO BEARS!
+Now inserting 214|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now inserting 215|Jesse Mercer|GO BEARS!
+Now inserting 216|Jesse Mercer|GO BEARS!
+Now inserting 217|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 218|Jesse Mercer|GO BEARS!
+Now inserting 219|Jesse Mercer|GO BEARS!
+Now inserting 220|Jesse Mercer|GO BEARS!
+Now inserting 221|Jesse Mercer|GO BEARS!
+Now inserting 222|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 223|Jesse Mercer|GO BEARS!
+Now inserting 224|Jesse Mercer|GO BEARS!
+Now inserting 225|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 226|Jesse Mercer|GO BEARS!
+Now inserting 227|Jesse Mercer|GO BEARS!
+Now inserting 228|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 229|Jesse Mercer|GO BEARS!
+Now inserting 230|Jesse Mercer|GO BEARS!
+Now inserting 231|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 232|Jesse Mercer|GO BEARS!
+Now inserting 233|Jesse Mercer|GO BEARS!
+Now inserting 234|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 235|Jesse Mercer|GO BEARS!
+Now inserting 236|Jesse Mercer|GO BEARS!
+Now inserting 237|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 238|Jesse Mercer|GO BEARS!
+Now inserting 239|Jesse Mercer|GO BEARS!
+Now inserting 240|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 241|Jesse Mercer|GO BEARS!
+Now inserting 242|Jesse Mercer|GO BEARS!
+Now inserting 243|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now inserting 244|Jesse Mercer|GO BEARS!
+Now inserting 245|Jesse Mercer|GO BEARS!
+Now inserting 246|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 247|Jesse Mercer|GO BEARS!
+Now inserting 248|Jesse Mercer|GO BEARS!
+Now inserting 249|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 250|Jesse Mercer|GO BEARS!
+Now inserting 251|Jesse Mercer|GO BEARS!
+Now inserting 252|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 253|Jesse Mercer|GO BEARS!
+Now inserting 254|Jesse Mercer|GO BEARS!
+Now inserting 255|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 256|Jesse Mercer|GO BEARS!
+Now inserting 257|Jesse Mercer|GO BEARS!
+Now inserting 258|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 259|Jesse Mercer|GO BEARS!
+Now inserting 260|Jesse Mercer|GO BEARS!
+Now inserting 261|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 262|Jesse Mercer|GO BEARS!
+Now inserting 263|Jesse Mercer|GO BEARS!
+Now inserting 264|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 265|Jesse Mercer|GO BEARS!
+Now inserting 266|Jesse Mercer|GO BEARS!
+Now inserting 267|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 268|Jesse Mercer|GO BEARS!
+Now inserting 269|Jesse Mercer|GO BEARS!
+Now inserting 270|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 271|Jesse Mercer|GO BEARS!
+Now inserting 272|Jesse Mercer|GO BEARS!
+Now inserting 273|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 274|Jesse Mercer|GO BEARS!
+Now inserting 275|Jesse Mercer|GO BEARS!
+Now inserting 276|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now inserting 277|Jesse Mercer|GO BEARS!
+Now inserting 278|Jesse Mercer|GO BEARS!
+Now inserting 279|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 280|Jesse Mercer|GO BEARS!
+Now inserting 281|Jesse Mercer|GO BEARS!
+Now inserting 282|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 283|Jesse Mercer|GO BEARS!
+Now inserting 284|Jesse Mercer|GO BEARS!
+Now inserting 285|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 286|Jesse Mercer|GO BEARS!
+Now inserting 287|Jesse Mercer|GO BEARS!
+Now inserting 288|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 289|Jesse Mercer|GO BEARS!
+Now inserting 290|Jesse Mercer|GO BEARS!
+Now inserting 291|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 292|Jesse Mercer|GO BEARS!
+Now inserting 293|Jesse Mercer|GO BEARS!
+Now inserting 294|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 295|Jesse Mercer|GO BEARS!
+Now inserting 296|Jesse Mercer|GO BEARS!
+Now inserting 297|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 298|Jesse Mercer|GO BEARS!
+Now inserting 299|Jesse Mercer|GO BEARS!
+Now inserting 300|Jesse Mercer|GO BEARS!
+Now inserting 301|Jesse Mercer|GO BEARS!
+Now inserting 302|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 303|Jesse Mercer|GO BEARS!
+Now inserting 304|Jesse Mercer|GO BEARS!
+Now inserting 305|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now inserting 306|Jesse Mercer|GO BEARS!
+Now inserting 307|Jesse Mercer|GO BEARS!
+Now inserting 308|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 309|Jesse Mercer|GO BEARS!
+Now inserting 310|Jesse Mercer|GO BEARS!
+Now inserting 311|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 312|Jesse Mercer|GO BEARS!
+Now inserting 313|Jesse Mercer|GO BEARS!
+Now inserting 314|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 315|Jesse Mercer|GO BEARS!
+Now inserting 316|Jesse Mercer|GO BEARS!
+Now inserting 317|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 318|Jesse Mercer|GO BEARS!
+Now inserting 319|Jesse Mercer|GO BEARS!
+Now inserting 320|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 321|Jesse Mercer|GO BEARS!
+Now inserting 322|Jesse Mercer|GO BEARS!
+Now inserting 323|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 324|Jesse Mercer|GO BEARS!
+Now inserting 325|Jesse Mercer|GO BEARS!
+Now inserting 326|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 327|Jesse Mercer|GO BEARS!
+Now inserting 328|Jesse Mercer|GO BEARS!
+Now inserting 329|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 330|Jesse Mercer|GO BEARS!
+Now inserting 331|Jesse Mercer|GO BEARS!
+Now inserting 332|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 333|Jesse Mercer|GO BEARS!
+Now inserting 334|Jesse Mercer|GO BEARS!
+Now inserting 335|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 336|Jesse Mercer|GO BEARS!
+Now inserting 337|Jesse Mercer|GO BEARS!
+Now inserting 338|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 339|Jesse Mercer|GO BEARS!
+Now inserting 340|Jesse Mercer|GO BEARS!
+Now inserting 341|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 342|Jesse Mercer|GO BEARS!
+Now inserting 343|Jesse Mercer|GO BEARS!
+Now inserting 344|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 345|Jesse Mercer|GO BEARS!
+Now inserting 346|Jesse Mercer|GO BEARS!
+Now inserting 347|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 348|Jesse Mercer|GO BEARS!
+Now inserting 349|Jesse Mercer|GO BEARS!
+Now inserting 350|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 351|Jesse Mercer|GO BEARS!
+Now inserting 352|Jesse Mercer|GO BEARS!
+Now inserting 353|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 354|Jesse Mercer|GO BEARS!
+Now inserting 355|Jesse Mercer|GO BEARS!
+Now inserting 356|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now inserting 357|Jesse Mercer|GO BEARS!
+Now inserting 358|Jesse Mercer|GO BEARS!
+Now inserting 359|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 360|Jesse Mercer|GO BEARS!
+Now inserting 361|Jesse Mercer|GO BEARS!
+Now inserting 362|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 363|Jesse Mercer|GO BEARS!
+Now inserting 364|Jesse Mercer|GO BEARS!
+Now inserting 365|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 366|Jesse Mercer|GO BEARS!
+Now inserting 367|Jesse Mercer|GO BEARS!
+Now inserting 368|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 369|Jesse Mercer|GO BEARS!
+Now inserting 370|Jesse Mercer|GO BEARS!
+Now inserting 371|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 372|Jesse Mercer|GO BEARS!
+Now inserting 373|Jesse Mercer|GO BEARS!
+Now inserting 374|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 375|Jesse Mercer|GO BEARS!
+Now inserting 376|Jesse Mercer|GO BEARS!
+Now inserting 377|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 378|Jesse Mercer|GO BEARS!
+Now inserting 379|Jesse Mercer|GO BEARS!
+Now inserting 380|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 381|Jesse Mercer|GO BEARS!
+Now inserting 382|Jesse Mercer|GO BEARS!
+Now inserting 383|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Now inserting 384|Jesse Mercer|GO BEARS!
+Now inserting 385|Jesse Mercer|GO BEARS!
+Now inserting 386|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 387|Jesse Mercer|GO BEARS!
+Now inserting 388|Jesse Mercer|GO BEARS!
+Now inserting 389|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 390|Jesse Mercer|GO BEARS!
+Now inserting 391|Jesse Mercer|GO BEARS!
+Now inserting 392|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now Splitting!
+Now inserting 393|Jesse Mercer|GO BEARS!
+Now inserting 394|Jesse Mercer|GO BEARS!
+Now inserting 395|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 396|Jesse Mercer|GO BEARS!
+Now inserting 397|Jesse Mercer|GO BEARS!
+Now inserting 398|Jesse Mercer|GO BEARS!
+Now Splitting!
+Now inserting 399|Jesse Mercer|GO BEARS!
+-------- B-tree of height 4 --------
+    *** node of size 3 ***
+178|Jesse Mercer|GO BEARS!
+258|Jesse Mercer|GO BEARS!
+354|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+121|Jesse Mercer|GO BEARS!
+146|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+105|Jesse Mercer|GO BEARS!
+113|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+10|Jesse Mercer|GO BEARS!
+102|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+0|Jesse Mercer|GO BEARS!
+1|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+100|Jesse Mercer|GO BEARS!
+101|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+103|Jesse Mercer|GO BEARS!
+104|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+108|Jesse Mercer|GO BEARS!
+110|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+106|Jesse Mercer|GO BEARS!
+107|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+109|Jesse Mercer|GO BEARS!
+11|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+111|Jesse Mercer|GO BEARS!
+112|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+116|Jesse Mercer|GO BEARS!
+119|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+114|Jesse Mercer|GO BEARS!
+115|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+117|Jesse Mercer|GO BEARS!
+118|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+12|Jesse Mercer|GO BEARS!
+120|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+13|Jesse Mercer|GO BEARS!
+138|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+124|Jesse Mercer|GO BEARS!
+127|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+122|Jesse Mercer|GO BEARS!
+123|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+125|Jesse Mercer|GO BEARS!
+126|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+128|Jesse Mercer|GO BEARS!
+129|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+132|Jesse Mercer|GO BEARS!
+135|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+130|Jesse Mercer|GO BEARS!
+131|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+133|Jesse Mercer|GO BEARS!
+134|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+136|Jesse Mercer|GO BEARS!
+137|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+140|Jesse Mercer|GO BEARS!
+143|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+139|Jesse Mercer|GO BEARS!
+14|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+141|Jesse Mercer|GO BEARS!
+142|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+144|Jesse Mercer|GO BEARS!
+145|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+16|Jesse Mercer|GO BEARS!
+17|Jesse Mercer|GO BEARS!
+    *** node of size 4 ***
+149|Jesse Mercer|GO BEARS!
+151|Jesse Mercer|GO BEARS!
+154|Jesse Mercer|GO BEARS!
+157|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+147|Jesse Mercer|GO BEARS!
+148|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+15|Jesse Mercer|GO BEARS!
+150|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+152|Jesse Mercer|GO BEARS!
+153|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+155|Jesse Mercer|GO BEARS!
+156|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+158|Jesse Mercer|GO BEARS!
+159|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+162|Jesse Mercer|GO BEARS!
+165|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+160|Jesse Mercer|GO BEARS!
+161|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+163|Jesse Mercer|GO BEARS!
+164|Jesse Mercer|GO BEARS!
+    *** node of size 4 ***
+166|Jesse Mercer|GO BEARS!
+167|Jesse Mercer|GO BEARS!
+168|Jesse Mercer|GO BEARS!
+169|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+172|Jesse Mercer|GO BEARS!
+175|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+170|Jesse Mercer|GO BEARS!
+171|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+173|Jesse Mercer|GO BEARS!
+174|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+176|Jesse Mercer|GO BEARS!
+177|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+201|Jesse Mercer|GO BEARS!
+228|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+186|Jesse Mercer|GO BEARS!
+194|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+180|Jesse Mercer|GO BEARS!
+183|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+179|Jesse Mercer|GO BEARS!
+18|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+181|Jesse Mercer|GO BEARS!
+182|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+184|Jesse Mercer|GO BEARS!
+185|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+189|Jesse Mercer|GO BEARS!
+191|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+187|Jesse Mercer|GO BEARS!
+188|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+19|Jesse Mercer|GO BEARS!
+190|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+192|Jesse Mercer|GO BEARS!
+193|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+197|Jesse Mercer|GO BEARS!
+2|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+195|Jesse Mercer|GO BEARS!
+196|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+198|Jesse Mercer|GO BEARS!
+199|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+20|Jesse Mercer|GO BEARS!
+200|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+21|Jesse Mercer|GO BEARS!
+22|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+204|Jesse Mercer|GO BEARS!
+207|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+202|Jesse Mercer|GO BEARS!
+203|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+205|Jesse Mercer|GO BEARS!
+206|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+208|Jesse Mercer|GO BEARS!
+209|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+212|Jesse Mercer|GO BEARS!
+215|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+210|Jesse Mercer|GO BEARS!
+211|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+213|Jesse Mercer|GO BEARS!
+214|Jesse Mercer|GO BEARS!
+    *** node of size 4 ***
+216|Jesse Mercer|GO BEARS!
+217|Jesse Mercer|GO BEARS!
+218|Jesse Mercer|GO BEARS!
+219|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+222|Jesse Mercer|GO BEARS!
+225|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+220|Jesse Mercer|GO BEARS!
+221|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+223|Jesse Mercer|GO BEARS!
+224|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+226|Jesse Mercer|GO BEARS!
+227|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+236|Jesse Mercer|GO BEARS!
+25|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+230|Jesse Mercer|GO BEARS!
+233|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+229|Jesse Mercer|GO BEARS!
+23|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+231|Jesse Mercer|GO BEARS!
+232|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+234|Jesse Mercer|GO BEARS!
+235|Jesse Mercer|GO BEARS!
+    *** node of size 4 ***
+239|Jesse Mercer|GO BEARS!
+241|Jesse Mercer|GO BEARS!
+244|Jesse Mercer|GO BEARS!
+247|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+237|Jesse Mercer|GO BEARS!
+238|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+24|Jesse Mercer|GO BEARS!
+240|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+242|Jesse Mercer|GO BEARS!
+243|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+245|Jesse Mercer|GO BEARS!
+246|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+248|Jesse Mercer|GO BEARS!
+249|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+252|Jesse Mercer|GO BEARS!
+255|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+250|Jesse Mercer|GO BEARS!
+251|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+253|Jesse Mercer|GO BEARS!
+254|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+256|Jesse Mercer|GO BEARS!
+257|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+282|Jesse Mercer|GO BEARS!
+33|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+266|Jesse Mercer|GO BEARS!
+274|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+260|Jesse Mercer|GO BEARS!
+263|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+259|Jesse Mercer|GO BEARS!
+26|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+261|Jesse Mercer|GO BEARS!
+262|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+264|Jesse Mercer|GO BEARS!
+265|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+269|Jesse Mercer|GO BEARS!
+271|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+267|Jesse Mercer|GO BEARS!
+268|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+27|Jesse Mercer|GO BEARS!
+270|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+272|Jesse Mercer|GO BEARS!
+273|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+277|Jesse Mercer|GO BEARS!
+28|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+275|Jesse Mercer|GO BEARS!
+276|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+278|Jesse Mercer|GO BEARS!
+279|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+280|Jesse Mercer|GO BEARS!
+281|Jesse Mercer|GO BEARS!
+    *** node of size 4 ***
+290|Jesse Mercer|GO BEARS!
+30|Jesse Mercer|GO BEARS!
+308|Jesse Mercer|GO BEARS!
+316|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+285|Jesse Mercer|GO BEARS!
+288|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+283|Jesse Mercer|GO BEARS!
+284|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+286|Jesse Mercer|GO BEARS!
+287|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+289|Jesse Mercer|GO BEARS!
+29|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+293|Jesse Mercer|GO BEARS!
+296|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+291|Jesse Mercer|GO BEARS!
+292|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+294|Jesse Mercer|GO BEARS!
+295|Jesse Mercer|GO BEARS!
+    *** node of size 4 ***
+297|Jesse Mercer|GO BEARS!
+298|Jesse Mercer|GO BEARS!
+299|Jesse Mercer|GO BEARS!
+3|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+302|Jesse Mercer|GO BEARS!
+305|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+300|Jesse Mercer|GO BEARS!
+301|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+303|Jesse Mercer|GO BEARS!
+304|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+306|Jesse Mercer|GO BEARS!
+307|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+310|Jesse Mercer|GO BEARS!
+313|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+309|Jesse Mercer|GO BEARS!
+31|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+311|Jesse Mercer|GO BEARS!
+312|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+314|Jesse Mercer|GO BEARS!
+315|Jesse Mercer|GO BEARS!
+    *** node of size 4 ***
+319|Jesse Mercer|GO BEARS!
+321|Jesse Mercer|GO BEARS!
+324|Jesse Mercer|GO BEARS!
+327|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+317|Jesse Mercer|GO BEARS!
+318|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+32|Jesse Mercer|GO BEARS!
+320|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+322|Jesse Mercer|GO BEARS!
+323|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+325|Jesse Mercer|GO BEARS!
+326|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+328|Jesse Mercer|GO BEARS!
+329|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+338|Jesse Mercer|GO BEARS!
+346|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+332|Jesse Mercer|GO BEARS!
+335|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+330|Jesse Mercer|GO BEARS!
+331|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+333|Jesse Mercer|GO BEARS!
+334|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+336|Jesse Mercer|GO BEARS!
+337|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+340|Jesse Mercer|GO BEARS!
+343|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+339|Jesse Mercer|GO BEARS!
+34|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+341|Jesse Mercer|GO BEARS!
+342|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+344|Jesse Mercer|GO BEARS!
+345|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+349|Jesse Mercer|GO BEARS!
+351|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+347|Jesse Mercer|GO BEARS!
+348|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+35|Jesse Mercer|GO BEARS!
+350|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+352|Jesse Mercer|GO BEARS!
+353|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+379|Jesse Mercer|GO BEARS!
+58|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+362|Jesse Mercer|GO BEARS!
+370|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+357|Jesse Mercer|GO BEARS!
+36|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+355|Jesse Mercer|GO BEARS!
+356|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+358|Jesse Mercer|GO BEARS!
+359|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+360|Jesse Mercer|GO BEARS!
+361|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+365|Jesse Mercer|GO BEARS!
+368|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+363|Jesse Mercer|GO BEARS!
+364|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+366|Jesse Mercer|GO BEARS!
+367|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+369|Jesse Mercer|GO BEARS!
+37|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+373|Jesse Mercer|GO BEARS!
+376|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+371|Jesse Mercer|GO BEARS!
+372|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+374|Jesse Mercer|GO BEARS!
+375|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+377|Jesse Mercer|GO BEARS!
+378|Jesse Mercer|GO BEARS!
+    *** node of size 3 ***
+387|Jesse Mercer|GO BEARS!
+41|Jesse Mercer|GO BEARS!
+5|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+381|Jesse Mercer|GO BEARS!
+384|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+38|Jesse Mercer|GO BEARS!
+380|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+382|Jesse Mercer|GO BEARS!
+383|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+385|Jesse Mercer|GO BEARS!
+386|Jesse Mercer|GO BEARS!
+    *** node of size 4 ***
+39|Jesse Mercer|GO BEARS!
+392|Jesse Mercer|GO BEARS!
+395|Jesse Mercer|GO BEARS!
+398|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+388|Jesse Mercer|GO BEARS!
+389|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+390|Jesse Mercer|GO BEARS!
+391|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+393|Jesse Mercer|GO BEARS!
+394|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+396|Jesse Mercer|GO BEARS!
+397|Jesse Mercer|GO BEARS!
+    *** node of size 3 ***
+399|Jesse Mercer|GO BEARS!
+4|Jesse Mercer|GO BEARS!
+40|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+44|Jesse Mercer|GO BEARS!
+47|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+42|Jesse Mercer|GO BEARS!
+43|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+45|Jesse Mercer|GO BEARS!
+46|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+48|Jesse Mercer|GO BEARS!
+49|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+52|Jesse Mercer|GO BEARS!
+55|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+50|Jesse Mercer|GO BEARS!
+51|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+53|Jesse Mercer|GO BEARS!
+54|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+56|Jesse Mercer|GO BEARS!
+57|Jesse Mercer|GO BEARS!
+    *** node of size 4 ***
+66|Jesse Mercer|GO BEARS!
+75|Jesse Mercer|GO BEARS!
+83|Jesse Mercer|GO BEARS!
+91|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+60|Jesse Mercer|GO BEARS!
+63|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+59|Jesse Mercer|GO BEARS!
+6|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+61|Jesse Mercer|GO BEARS!
+62|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+64|Jesse Mercer|GO BEARS!
+65|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+7|Jesse Mercer|GO BEARS!
+72|Jesse Mercer|GO BEARS!
+    *** node of size 3 ***
+67|Jesse Mercer|GO BEARS!
+68|Jesse Mercer|GO BEARS!
+69|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+70|Jesse Mercer|GO BEARS!
+71|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+73|Jesse Mercer|GO BEARS!
+74|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+78|Jesse Mercer|GO BEARS!
+80|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+76|Jesse Mercer|GO BEARS!
+77|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+79|Jesse Mercer|GO BEARS!
+8|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+81|Jesse Mercer|GO BEARS!
+82|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+86|Jesse Mercer|GO BEARS!
+89|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+84|Jesse Mercer|GO BEARS!
+85|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+87|Jesse Mercer|GO BEARS!
+88|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+9|Jesse Mercer|GO BEARS!
+90|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+94|Jesse Mercer|GO BEARS!
+97|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+92|Jesse Mercer|GO BEARS!
+93|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+95|Jesse Mercer|GO BEARS!
+96|Jesse Mercer|GO BEARS!
+    *** node of size 2 ***
+98|Jesse Mercer|GO BEARS!
+99|Jesse Mercer|GO BEARS!
+]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ myCreate album.large tree.ind[1P tree.ind[1P tree.ind[1P tree.ind[1P tree.ind[1P tree.indr tree.inda tree.indn tree.indd tree.ind
+Now inserting 6695-158-447|Classic Queen|I WANT IT ALL!
+Now inserting 1266-890-125|Classic Queen|I WANT IT ALL!
+Now inserting 0635-987-411|Classic Queen|I WANT IT ALL!
+Now inserting 0725-9171509|Classic Queen|I WANT IT ALL!
+Now inserting 2110-053-528|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Adjusting Root!
+Now inserting 3254-4708715|Classic Queen|I WANT IT ALL!
+Now inserting 6898-261-781|Classic Queen|I WANT IT ALL!
+Now inserting 9519-1966372|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 8504-1576204|Classic Queen|I WANT IT ALL!
+Now inserting 5858-647-054|Classic Queen|I WANT IT ALL!
+Now inserting 3168-073-246|Classic Queen|I WANT IT ALL!
+Now inserting 5730-1800110|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 2018-422-313|Classic Queen|I WANT IT ALL!
+Now inserting 3340-1036071|Classic Queen|I WANT IT ALL!
+Now inserting 2333-418-640|Classic Queen|I WANT IT ALL!
+Now inserting 6660-9419267|Classic Queen|I WANT IT ALL!
+Now inserting 2914-9309110|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 3243-335-948|Classic Queen|I WANT IT ALL!
+Now inserting 1855-191-314|Classic Queen|I WANT IT ALL!
+Now inserting 5264-791-954|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now Splitting!
+Adjusting Root!
+Now inserting 9631-436-223|Classic Queen|I WANT IT ALL!
+Now inserting 6216-9653067|Classic Queen|I WANT IT ALL!
+Now inserting 9790-4089932|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 1357-1345847|Classic Queen|I WANT IT ALL!
+Now inserting 6661-6237969|Classic Queen|I WANT IT ALL!
+Now inserting 8239-149-328|Classic Queen|I WANT IT ALL!
+Now inserting 9772-5396922|Classic Queen|I WANT IT ALL!
+Now inserting 8157-169-441|Classic Queen|I WANT IT ALL!
+Now inserting 1335-814-852|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 2478-436-912|Classic Queen|I WANT IT ALL!
+Now inserting 8538-491-924|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 3025-2145283|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 7393-6626925|Classic Queen|I WANT IT ALL!
+Now inserting 5002-144-259|Classic Queen|I WANT IT ALL!
+Now inserting 0565-1026688|Classic Queen|I WANT IT ALL!
+Now inserting 3542-3536137|Classic Queen|I WANT IT ALL!
+Now inserting 9112-349-234|Classic Queen|I WANT IT ALL!
+Now inserting 1892-489-267|Classic Queen|I WANT IT ALL!
+Now inserting 5821-7841347|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now Splitting!
+Now inserting 2361-476-655|Classic Queen|I WANT IT ALL!
+Now inserting 0793-7576367|Classic Queen|I WANT IT ALL!
+Now inserting 2639-4572884|Classic Queen|I WANT IT ALL!
+Now inserting 9732-0079775|Classic Queen|I WANT IT ALL!
+Now inserting 7846-8106878|Classic Queen|I WANT IT ALL!
+Now inserting 7459-9032542|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 9901-259-824|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 4628-8292674|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 7451-7202204|Classic Queen|I WANT IT ALL!
+Now inserting 4359-1245339|Classic Queen|I WANT IT ALL!
+Now inserting 1598-600-894|Classic Queen|I WANT IT ALL!
+Now inserting 7883-951-029|Classic Queen|I WANT IT ALL!
+Now inserting 5450-269-643|Classic Queen|I WANT IT ALL!
+Now inserting 5226-625-588|Classic Queen|I WANT IT ALL!
+Now inserting 1062-2621135|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now Splitting!
+Now inserting 0919-634-377|Classic Queen|I WANT IT ALL!
+Now inserting 3857-068-605|Classic Queen|I WANT IT ALL!
+Now inserting 9187-416-126|Classic Queen|I WANT IT ALL!
+Now inserting 2604-940-386|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 2459-1045167|Classic Queen|I WANT IT ALL!
+Now inserting 0316-6991881|Classic Queen|I WANT IT ALL!
+Now inserting 0777-002-759|Classic Queen|I WANT IT ALL!
+Now inserting 1080-754-528|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 3144-3853164|Classic Queen|I WANT IT ALL!
+Now inserting 2590-526-737|Classic Queen|I WANT IT ALL!
+Now inserting 0985-3418901|Classic Queen|I WANT IT ALL!
+Now inserting 2756-1403235|Classic Queen|I WANT IT ALL!
+Now inserting 4492-282-663|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 6192-0971898|Classic Queen|I WANT IT ALL!
+Now inserting 5876-472-492|Classic Queen|I WANT IT ALL!
+Now inserting 1093-5679540|Classic Queen|I WANT IT ALL!
+Now inserting 0678-949-176|Classic Queen|I WANT IT ALL!
+Now inserting 3671-5502966|Classic Queen|I WANT IT ALL!
+Now inserting 6613-2143986|Classic Queen|I WANT IT ALL!
+Now inserting 4277-442-556|Classic Queen|I WANT IT ALL!
+Now inserting 1891-4459321|Classic Queen|I WANT IT ALL!
+Now inserting 9317-9266864|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now Splitting!
+Now inserting 9974-2039846|Classic Queen|I WANT IT ALL!
+Now inserting 3237-4828217|Classic Queen|I WANT IT ALL!
+Now inserting 4093-209-181|Classic Queen|I WANT IT ALL!
+Now inserting 0949-4024218|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 0344-437-586|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now Splitting!
+Now Splitting!
+Adjusting Root!
+Now inserting 4274-3483717|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now Splitting!
+Now inserting 7076-1046683|Classic Queen|I WANT IT ALL!
+Now inserting 9719-7295205|Classic Queen|I WANT IT ALL!
+Now inserting 7721-5597705|Classic Queen|I WANT IT ALL!
+Now inserting 9747-535-397|Classic Queen|I WANT IT ALL!
+Now inserting 0928-185-242|Classic Queen|I WANT IT ALL!
+Now inserting 3757-527-535|Classic Queen|I WANT IT ALL!
+Now inserting 0022-980-419|Classic Queen|I WANT IT ALL!
+Now inserting 2104-319-383|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 7790-265-584|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 9745-9776524|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 2147-2814695|Classic Queen|I WANT IT ALL!
+Now inserting 6047-262-145|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 4302-969-696|Classic Queen|I WANT IT ALL!
+Now inserting 1647-546-663|Classic Queen|I WANT IT ALL!
+Now inserting 5866-459-168|Classic Queen|I WANT IT ALL!
+Now inserting 4647-229-236|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 1552-395-052|Classic Queen|I WANT IT ALL!
+Now Splitting!
+Now inserting 5894-144-730|Classic Queen|I WANT IT ALL!
+-------- B-tree of height 3 --------
+    *** node of size 1 ***
+3254-4708715|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+0919-634-377|Classic Queen|I WANT IT ALL!
+1855-191-314|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+0565-1026688|Classic Queen|I WANT IT ALL!
+0725-9171509|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+0022-980-419|Classic Queen|I WANT IT ALL!
+0316-6991881|Classic Queen|I WANT IT ALL!
+0344-437-586|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+0635-987-411|Classic Queen|I WANT IT ALL!
+0678-949-176|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+0777-002-759|Classic Queen|I WANT IT ALL!
+0793-7576367|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+1062-2621135|Classic Queen|I WANT IT ALL!
+1266-890-125|Classic Queen|I WANT IT ALL!
+1552-395-052|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+0928-185-242|Classic Queen|I WANT IT ALL!
+0949-4024218|Classic Queen|I WANT IT ALL!
+0985-3418901|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+1080-754-528|Classic Queen|I WANT IT ALL!
+1093-5679540|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+1335-814-852|Classic Queen|I WANT IT ALL!
+1357-1345847|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+1598-600-894|Classic Queen|I WANT IT ALL!
+1647-546-663|Classic Queen|I WANT IT ALL!
+    *** node of size 4 ***
+2018-422-313|Classic Queen|I WANT IT ALL!
+2333-418-640|Classic Queen|I WANT IT ALL!
+2604-940-386|Classic Queen|I WANT IT ALL!
+3025-2145283|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+1891-4459321|Classic Queen|I WANT IT ALL!
+1892-489-267|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+2104-319-383|Classic Queen|I WANT IT ALL!
+2110-053-528|Classic Queen|I WANT IT ALL!
+2147-2814695|Classic Queen|I WANT IT ALL!
+    *** node of size 4 ***
+2361-476-655|Classic Queen|I WANT IT ALL!
+2459-1045167|Classic Queen|I WANT IT ALL!
+2478-436-912|Classic Queen|I WANT IT ALL!
+2590-526-737|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+2639-4572884|Classic Queen|I WANT IT ALL!
+2756-1403235|Classic Queen|I WANT IT ALL!
+2914-9309110|Classic Queen|I WANT IT ALL!
+    *** node of size 4 ***
+3144-3853164|Classic Queen|I WANT IT ALL!
+3168-073-246|Classic Queen|I WANT IT ALL!
+3237-4828217|Classic Queen|I WANT IT ALL!
+3243-335-948|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+4628-8292674|Classic Queen|I WANT IT ALL!
+6695-158-447|Classic Queen|I WANT IT ALL!
+9112-349-234|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+3857-068-605|Classic Queen|I WANT IT ALL!
+4277-442-556|Classic Queen|I WANT IT ALL!
+    *** node of size 4 ***
+3340-1036071|Classic Queen|I WANT IT ALL!
+3542-3536137|Classic Queen|I WANT IT ALL!
+3671-5502966|Classic Queen|I WANT IT ALL!
+3757-527-535|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+4093-209-181|Classic Queen|I WANT IT ALL!
+4274-3483717|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+4302-969-696|Classic Queen|I WANT IT ALL!
+4359-1245339|Classic Queen|I WANT IT ALL!
+4492-282-663|Classic Queen|I WANT IT ALL!
+    *** node of size 4 ***
+5226-625-588|Classic Queen|I WANT IT ALL!
+5730-1800110|Classic Queen|I WANT IT ALL!
+5876-472-492|Classic Queen|I WANT IT ALL!
+6216-9653067|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+4647-229-236|Classic Queen|I WANT IT ALL!
+5002-144-259|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+5264-791-954|Classic Queen|I WANT IT ALL!
+5450-269-643|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+5821-7841347|Classic Queen|I WANT IT ALL!
+5858-647-054|Classic Queen|I WANT IT ALL!
+5866-459-168|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+5894-144-730|Classic Queen|I WANT IT ALL!
+6047-262-145|Classic Queen|I WANT IT ALL!
+6192-0971898|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+6613-2143986|Classic Queen|I WANT IT ALL!
+6660-9419267|Classic Queen|I WANT IT ALL!
+6661-6237969|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+7459-9032542|Classic Queen|I WANT IT ALL!
+7846-8106878|Classic Queen|I WANT IT ALL!
+8239-149-328|Classic Queen|I WANT IT ALL!
+    *** node of size 4 ***
+6898-261-781|Classic Queen|I WANT IT ALL!
+7076-1046683|Classic Queen|I WANT IT ALL!
+7393-6626925|Classic Queen|I WANT IT ALL!
+7451-7202204|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+7721-5597705|Classic Queen|I WANT IT ALL!
+7790-265-584|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+7883-951-029|Classic Queen|I WANT IT ALL!
+8157-169-441|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+8504-1576204|Classic Queen|I WANT IT ALL!
+8538-491-924|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+9519-1966372|Classic Queen|I WANT IT ALL!
+9732-0079775|Classic Queen|I WANT IT ALL!
+9772-5396922|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+9187-416-126|Classic Queen|I WANT IT ALL!
+9317-9266864|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+9631-436-223|Classic Queen|I WANT IT ALL!
+9719-7295205|Classic Queen|I WANT IT ALL!
+    *** node of size 2 ***
+9745-9776524|Classic Queen|I WANT IT ALL!
+9747-535-397|Classic Queen|I WANT IT ALL!
+    *** node of size 3 ***
+9790-4089932|Classic Queen|I WANT IT ALL!
+9901-259-824|Classic Queen|I WANT IT ALL!
+9974-2039846|Classic Queen|I WANT IT ALL!
+]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ myCreate album.rand tree.ind[1@large[C[C[C[C[C[C[C[C[C[1PUpdate tree.ind trans1.dat21.dat[1P.dat
+	"20831-4207-2" not found
+	"7559-61257-2" not found
+	"non-existing" not found
+	"08811-134120" not found
+	"01015" not found
+	6695-158-447|Classic Queen|I WANT IT ALL!
+	"01" not found
+
+	Total Reads: 48
+	Total Writes: 0
+]0;bryant_gw@cobra:~/csc310/Prog3[bryant_gw@cobra Prog3]$ exit
+exit
+
+Script done on Fri 07 May 2021 04:31:23 PM EDT

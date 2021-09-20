@@ -1,0 +1,34 @@
+The goal of this assignment is to impliment a B-Tree that can store offsets to album objects that are stored on disc. For this project we must
+desgin and impliment both an album class and object as well as a B-tree object and class.
+
+B-tree class:
+    public methods:
+        -BTree(): The BTree uses a default constructor that first creates an empty root.
+        -writeHeader(): This function will write the location of the write head to a file.
+        -insert(): calls private version of this function.
+        -reset(): this function will reset the BTree.
+        -close(): this function will close the treeFile fstream.
+        -printTree(): this function will call the private version of this function.
+        -inorder(): this function will call the private version of this function.
+        -reverse(): this function will call the private version of this function.
+        -getHeight(): returns the height of the tree.
+        -search(): recursively searches through the tree for a given value and returns if it is in the tree
+        -retrieve(): recursively searches through the tree for a given value and returns that item.
+        -totalio(): returns teh total amount of io operations done in the program.
+        -countLeaves(): calls private version of this function.
+    private methods:
+        -printTree(): recursively goes through the tree and prints out all of the nodes.
+        -inorder(): gives an in order traversal of the BTree using recursion.
+        -reverse(): gives a reverse order traversal of the tree using recursion.
+        -findAddr(): given a key, a Node and an address this function finds the address of that given key on disc.
+        -findpAddr(): similar to findAddr this finds the address of the parent node of the given key.
+        -insert(): inserts a new key into the BTree by traversing the tree to find the correct place for it and placing
+        it there, and then calling split node if needed.
+        -getNode(): given a recAddr returns a BTNode.
+        -printNode(): recursive print of objects in a node.
+        -placeNode(): places a new node at a given address.
+        -isLeaf(): given either a BTNode or a redAddr tells if a node is a leaf.
+        -countLeaves(): recursively counts the leaves in your BTree.
+        -adjRoot(): adjusts the root node when a split occurs that changes the root.
+        -splitNode(): splits a node by promoting the median element of the node.
+        -search(): returns a bool if an element is in the BTree

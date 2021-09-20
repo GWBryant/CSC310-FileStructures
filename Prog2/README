@@ -1,0 +1,26 @@
+COMPILATION NOTES:
+To compile the jtar program you must specify that you are compiling with c++17 by using the following syntax:
+    c++ -std=c++17 jtar.cpp file.o
+
+The File Class:
+The file class has private variables for the name, size, protection mode (pmode), and timestamp for a given file. There is also a boolean for if a file is a directory. 
+It has three constructors, a default that sets default variables, a copy constructor, and an explicit constructor.
+It also has an operator overload for assignment to create a deep copy of another file object.
+Its methods include getters for all of the private variables which are stored in const char[]'s.
+There is also a method to flag a file as a directory, and one to return the boolean isDir.
+RecordSize() returns the size of a file object as an integer.
+
+Plans for cf and xf:
+    cf:
+        For cf we must loop through our files being passed in through the command line and create file objects for them if the files/directories exist. If a file passed in is a directory
+        we need to recursively go through the directory and get all of its files and subdirectories and their files. As we go through these files we need to also create file objects for them
+        and push them onto a vector/list of file objects. Once we have all of the files we go through our list of files and directories and create the tar file. In order to do this we first
+        print the number of files we're tarring to the tar file, then we print out each file object to the tar file. If the file is a directory nothing comes after the file object but if
+        it is a text file it is followed by the contents of the text file. We get this by opening the file and reading its contents into a char array and writing that array to the tar file.
+        At this point our tar file is created.
+    xf:
+        For xf we need to unpack our tar file. In order to do this we must loop through our tar file and recreate the files contained within. First we grab the number of files from the 
+        beginning of the tar file, then we loop that many times to get through the file. On each loop we first grab the file object and see if it is a directory. If it is we create that 
+        directory, if it isn't we open a file with the given file name and read the contents of the file into a char array that we then print out to the file we created. After that we 
+        use the system command to change the protections of the file as well as the timestamp using touch -t and chmod. If a directory already exists we don't need to create a new one 
+        because all we're doing is overwriting the files inside of it.

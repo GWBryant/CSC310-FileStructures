@@ -1,0 +1,10 @@
+0000000    6147    6562    000a
+          G   a   b   e  \n
+0000005
+Character  ASCII     HEX
+    G       71        47
+    a       97        61
+    b       98        62  
+    e       101       65
+    \n      10        0A
+/home/bryant_gw/csc310/Prog1
